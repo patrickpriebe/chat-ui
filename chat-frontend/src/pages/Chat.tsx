@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { api } from '../services/api';
+import { NexusLogo } from '../components/NexusLogo';
 
 interface Room {
   id: string;
@@ -19,36 +20,32 @@ interface Message {
 
 export function Chat() {
   const { user, signOut } = useAuth();
-  
+
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  
+
   const [myUserId, setMyUserId] = useState<string>('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<{ [key: string]: number }>({});
 
-  // Estado para rastrear quem está digitando na sala ativa { [username]: boolean }
   const [typingUsers, setTypingUsers] = useState<{ [key: string]: boolean }>({});
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
-  // Refs para gerenciar o cliente único e evitar stale closures no WebSocket
   const clientRef = useRef<Client | null>(null);
   const activeRoomRef = useRef<Room | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isInitializedRef = useRef(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Mantém a ref da sala ativa sempre atualizada em tempo real
   useEffect(() => {
     activeRoomRef.current = activeRoom;
   }, [activeRoom]);
 
-  // 1. Carrega dados iniciais e conecta o WebSocket UMA ÚNICA VEZ
   useEffect(() => {
     if (isInitializedRef.current) return;
     isInitializedRef.current = true;
@@ -57,7 +54,7 @@ export function Chat() {
       try {
         const usersResp = await api.get('/users');
         const usersList = usersResp.data.content ? usersResp.data.content : usersResp.data;
-        
+
         if (Array.isArray(usersList)) {
           setAllUsers(usersList);
           const currentUser = usersList.find((u: any) => u.email === user?.email);
@@ -66,13 +63,13 @@ export function Chat() {
 
         const roomsResp = await api.get('/rooms');
         const roomsList = roomsResp.data.content ? roomsResp.data.content : roomsResp.data;
-        
+
         if (Array.isArray(roomsList)) {
           setRooms(roomsList);
           connectUnifiedWebSocket(roomsList);
         }
       } catch (error) {
-        console.error('Erro ao inicializar chat', error);
+        console.error('Error initializing chat', error);
       }
     }
 
@@ -85,7 +82,6 @@ export function Chat() {
     };
   }, [user]);
 
-  // Conecta um único cliente STOMP e se inscreve em todas as salas (Mensagens e Digitação)
   function connectUnifiedWebSocket(roomList: Room[]) {
     const token = localStorage.getItem('@ChatApp:token');
     if (!token) return;
@@ -99,7 +95,6 @@ export function Chat() {
       connectHeaders: { Authorization: `Bearer ${token}` },
       onConnect: () => {
         roomList.forEach(room => {
-          // Inscrição para o canal de mensagens da sala
           client.subscribe(`/topic/rooms/${room.id}`, (message) => {
             const receivedMessage = JSON.parse(message.body);
             const myUsername = user?.email?.split('@')[0];
@@ -116,7 +111,6 @@ export function Chat() {
             }
           });
 
-          // Inscrição para o canal de digitação da sala
           client.subscribe(`/topic/rooms/${room.id}/typing`, (message) => {
             const event = JSON.parse(message.body);
             const myUsername = user?.email?.split('@')[0];
@@ -140,7 +134,6 @@ export function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Função executada a cada tecla digitada no input
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value;
     setNewMessage(value);
@@ -148,13 +141,11 @@ export function Chat() {
     const myUsername = user?.email?.split('@')[0];
     if (!activeRoom || !clientRef.current || !clientRef.current.connected || !myUsername) return;
 
-    // Publica no backend que o usuário começou a digitar
     clientRef.current.publish({
       destination: '/app/typing',
       body: JSON.stringify({ roomId: activeRoom.id, username: myUsername, isTyping: true })
     });
 
-    // Reseta o temporizador para enviar que parou de digitar após 2 segundos de inatividade
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     typingTimeoutRef.current = setTimeout(() => {
@@ -167,7 +158,6 @@ export function Chat() {
     }, 2000);
   }
 
-  // Ao clicar em uma sala, busca o histórico, limpa o typing e zera as não lidas
   async function joinRoom(room: Room) {
     setActiveRoom(room);
     setMessages([]);
@@ -178,7 +168,7 @@ export function Chat() {
       const response = await api.get(`/messages/room/${room.id}`);
       setMessages(response.data);
     } catch (error) {
-      console.error('Erro ao buscar histórico', error);
+      console.error('Error fetching history', error);
     }
   }
 
@@ -201,26 +191,25 @@ export function Chat() {
       });
       setNewMessage('');
     } catch (error) {
-      console.error('Erro ao enviar mensagem', error);
+      console.error('Error sending message', error);
     }
   }
 
   async function handleCreateRoom() {
     if (!newRoomName.trim() || selectedUserIds.length === 0) {
-      return alert('Dê um nome para a sala e selecione pelo menos um usuário!');
+      return alert('Give the channel a name and select at least one user!');
     }
 
     try {
       const response = await api.post('/rooms', {
         name: newRoomName,
-        type: 'GROUP', 
+        type: 'GROUP',
         memberIds: [myUserId, ...selectedUserIds]
       });
 
       const newRoom = response.data;
       setRooms(prev => [...prev, newRoom]);
-      
-      // Inscreve a nova sala nos canais de mensagem e digitação do cliente STOMP ativo
+
       if (clientRef.current && clientRef.current.connected) {
         clientRef.current.subscribe(`/topic/rooms/${newRoom.id}`, (message) => {
           const receivedMessage = JSON.parse(message.body);
@@ -255,13 +244,13 @@ export function Chat() {
       setSelectedUserIds([]);
       setIsModalOpen(false);
     } catch (error) {
-      console.error('Erro ao criar sala', error);
-      alert('Erro ao criar sala.');
+      console.error('Error creating room', error);
+      alert('Error creating room.');
     }
   }
 
   function toggleUserSelection(userId: string) {
-    setSelectedUserIds(prev => 
+    setSelectedUserIds(prev =>
       prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
     );
   }
@@ -269,200 +258,387 @@ export function Chat() {
   function formatTime(isoString?: string) {
     if (!isoString) return '';
     const date = new Date(isoString);
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   }
 
   function getInitials(name?: string) {
     if (!name) return 'U';
-    return name.charAt(0).toUpperCase();
+    return name.substring(0, 2).toUpperCase();
   }
 
-  // Lista quem está digitando no momento na sala ativa
   const currentlyTyping = Object.entries(typingUsers)
     .filter(([_, isTyping]) => isTyping)
     .map(([username]) => username);
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif', position: 'relative' }}>
-      
-      {/* MODAL DE NOVA SALA */}
+    <div className="flex flex-col h-screen bg-background font-body-md text-on-background overflow-hidden relative">
+      {/* Background Grid Pattern */}
+      <div className="absolute inset-0 bg-grid opacity-40 pointer-events-none z-0" />
+
+      {/* NEW ROOM MODAL */}
       {isModalOpen && (
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', padding: '2rem', borderRadius: '8px', width: '400px', maxWidth: '90%' }}>
-            <h2 style={{ marginTop: 0 }}>Criar Nova Sala</h2>
-            
-            <input 
-              type="text" 
-              placeholder="Nome do Grupo/Sala"
+        <div className="absolute inset-0 bg-background/90 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-panel p-8 rounded-xl w-full max-w-md relative overflow-hidden shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+            <div className="absolute top-0 left-0 w-8 h-1 bg-primary-fixed-dim" />
+
+            <h2 className="mt-0 mb-6 font-headline-lg text-headline-lg tracking-tighter text-on-surface uppercase">
+              New <span className="text-primary-fixed-dim">Channel</span>
+            </h2>
+
+            <input
+              type="text"
+              placeholder="Channel Name"
               value={newRoomName}
               onChange={e => setNewRoomName(e.target.value)}
-              style={{ width: '100%', padding: '0.8rem', marginBottom: '1rem', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
+              className="input-cyber w-full rounded px-3 py-3 mb-6 font-code-md text-code-md text-on-surface placeholder:text-on-surface-variant/30 focus:ring-0"
             />
 
-            <p style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Selecione os participantes:</p>
-            <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #ccc', padding: '0.5rem', marginBottom: '1rem', borderRadius: '4px' }}>
+            <p className="font-label-caps text-label-caps text-on-surface-variant uppercase mb-3">
+              Users:
+            </p>
+            <div className="max-h-48 overflow-y-auto border border-outline-variant/30 bg-surface-container-lowest/50 p-2 mb-6 scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
               {allUsers.filter(u => u.id !== myUserId).length === 0 ? (
-                <p style={{ color: '#888', fontSize: '0.9rem' }}>Nenhum outro usuário encontrado no sistema.</p>
+                <p className="text-on-surface-variant/40 font-code-md text-code-md text-xs p-2">
+                  No active nodes on the network.
+                </p>
               ) : (
                 allUsers.filter(u => u.id !== myUserId).map(u => (
-                  <label key={u.id} style={{ display: 'block', padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
-                    <input 
-                      type="checkbox" 
+                  <label
+                    key={u.id}
+                    className="flex items-center p-2 cursor-pointer border-b border-outline-variant/10 hover:bg-primary-container/10 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
                       checked={selectedUserIds.includes(u.id)}
                       onChange={() => toggleUserSelection(u.id)}
-                      style={{ marginRight: '0.8rem' }}
+                      className="mr-3 accent-primary-fixed-dim"
                     />
-                    {u.email}
+                    <span className="font-code-md text-code-md text-on-surface-variant text-xs">{u.email}</span>
                   </label>
                 ))
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-              <button onClick={() => setIsModalOpen(false)} style={{ padding: '0.8rem 1.5rem', border: 'none', background: '#ccc', cursor: 'pointer', borderRadius: '4px', fontWeight: 'bold' }}>Cancelar</button>
-              <button onClick={handleCreateRoom} style={{ padding: '0.8rem 1.5rem', border: 'none', background: '#00a884', color: 'white', cursor: 'pointer', borderRadius: '4px', fontWeight: 'bold' }}>Criar Sala</button>
+            <div className="flex gap-4 justify-end">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-6 py-2 font-label-caps text-label-caps uppercase text-on-surface-variant hover:text-on-surface transition-colors"
+              >
+                Abort
+              </button>
+              <button
+                onClick={handleCreateRoom}
+                className="btn-primary-cyber px-6 py-2 rounded font-label-caps text-label-caps font-bold uppercase"
+              >
+                Establish
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* SIDEBAR */}
-      <div style={{ width: '300px', borderRight: '1px solid #ddd', display: 'flex', flexDirection: 'column', background: '#fff' }}>
-        <div style={{ padding: '1.5rem', borderBottom: '1px solid #ddd', background: '#f0f2f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Conversas</h2>
-            <span style={{ fontSize: '0.8rem', color: '#666' }}>{user?.email}</span>
+      {/* TOP NAVBAR */}
+      <header className="h-16 shrink-0 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/10 shadow-[0_4px_30px_rgba(0,0,0,0.1)] flex items-center justify-between px-6 md:px-margin-desktop relative z-30">
+        <div className="flex items-center gap-3">
+          <NexusLogo className="h-8 w-8 text-primary-fixed-dim drop-shadow-[0_0_10px_rgba(0,219,233,0.5)]" />
+          <span className="font-display-lg text-headline-lg-mobile md:text-headline-lg font-bold text-primary-fixed-dim drop-shadow-[0_0_10px_rgba(0,219,233,0.5)] tracking-tighter">
+            NEXUS
+          </span>
+        </div>
+        <nav className="hidden md:flex gap-8">
+          <span className="font-headline-lg-mobile text-sm tracking-tight text-on-surface-variant/60 cursor-default">
+            Network
+          </span>
+          <span className="font-headline-lg-mobile text-sm tracking-tight text-primary-fixed-dim border-b-2 border-primary-fixed-dim pb-1 cursor-default">
+            Channels
+          </span>
+          <span className="font-headline-lg-mobile text-sm tracking-tight text-on-surface-variant/60 cursor-default">
+            Direct
+          </span>
+          <span className="font-headline-lg-mobile text-sm tracking-tight text-on-surface-variant/60 cursor-default">
+            Vault
+          </span>
+        </nav>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex relative">
+            <input
+              placeholder="Search Data..."
+              className="bg-surface-container-high/60 border-b border-outline-variant/30 text-body-sm font-body-sm px-4 py-2 w-48 lg:w-64 focus:outline-none focus:border-primary-fixed-dim focus:ring-0 bg-transparent text-on-surface placeholder:text-on-surface-variant/50"
+            />
+            <span className="material-symbols-outlined absolute right-2 top-2 text-on-surface-variant/50 !text-[18px] pointer-events-none">
+              search
+            </span>
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            style={{ background: '#00a884', color: 'white', border: 'none', borderRadius: '50%', width: '35px', height: '35px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            title="Nova Sala"
-          >
-            +
+          <button className="text-on-surface-variant/60 hover:text-primary-fixed-dim transition-colors">
+            <span className="material-symbols-outlined !text-[20px]">notifications</span>
           </button>
-        </div>
-        
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {rooms.map(room => {
-            const unreadCount = unreadCounts[room.id] || 0;
-            return (
-              <div 
-                key={room.id} 
-                onClick={() => joinRoom(room)}
-                style={{ 
-                  padding: '1rem 1.5rem', 
-                  borderBottom: '1px solid #eee', 
-                  cursor: 'pointer',
-                  background: activeRoom?.id === room.id ? '#ebebeb' : '#fff',
-                  transition: 'background 0.2s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#00a884', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem' }}>
-                    {getInitials(room.name)}
-                  </div>
-                  <div>
-                    <strong style={{ display: 'block', color: '#333' }}>{room.name}</strong>
-                    <span style={{ fontSize: '0.8rem', color: '#888' }}>{room.type === 'GROUP' ? 'Grupo' : 'Privado'}</span>
-                  </div>
-                </div>
-
-                {unreadCount > 0 && (
-                  <div style={{ background: '#25d366', color: '#white', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                    {unreadCount}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        
-        <div style={{ padding: '1rem', borderTop: '1px solid #ddd' }}>
-          <button 
-            onClick={signOut} 
-            style={{ width: '100%', padding: '0.8rem', background: '#ff4c4c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            Sair da Conta
+          <button className="text-on-surface-variant/60 hover:text-primary-fixed-dim transition-colors">
+            <span className="material-symbols-outlined !text-[20px]">settings</span>
           </button>
-        </div>
-      </div>
-
-      {/* ÁREA DO CHAT */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#e5ddd5' }}>
-        {!activeRoom ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', background: '#f0f2f5' }}>
-            <div style={{ textAlign: 'center' }}>
-              <h2 style={{ margin: '0 0 1rem 0' }}>Chat Fullstack</h2>
-              <p>Selecione uma conversa para começar a enviar mensagens.</p>
-            </div>
+          <div className="w-8 h-8 rounded-full border border-outline-variant/30 flex items-center justify-center bg-surface-container-high font-code-md text-code-md text-on-surface-variant text-xs">
+            {getInitials(user?.email?.split('@')[0])}
           </div>
-        ) : (
-          <>
-            <div style={{ padding: '1rem 2rem', background: '#f0f2f5', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ccc', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem' }}>
-                {getInitials(activeRoom.name)}
-              </div>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#333' }}>{activeRoom.name}</h2>
-            </div>
+        </div>
+      </header>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-              {messages.map((msg, index) => {
-                const isMe = msg.senderUsername === user?.email?.split('@')[0];
+      <div className="flex flex-1 overflow-hidden relative z-10">
+        {/* SIDEBAR (Mainframe / Channels) */}
+        <aside className="w-72 shrink-0 border-r border-outline-variant/10 bg-surface-container-lowest/50 backdrop-blur-2xl flex flex-col z-20 hidden md:flex">
+          <div className="p-6 border-b border-outline-variant/10 bg-surface-container-low/30">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded flex items-center justify-center border border-primary-fixed-dim/30 bg-primary-container/5">
+                <NexusLogo className="h-6 w-6 text-primary-fixed-dim" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-headline-lg-mobile text-headline-lg-mobile text-primary-fixed-dim leading-none truncate">
+                  Mainframe
+                </h2>
+                <span className="font-code-md text-code-md text-on-surface-variant/50 text-[10px] flex items-center gap-1 mt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-fixed-dim animate-pulse shrink-0" />
+                  <span className="truncate">{user?.email?.split('@')[0]}</span>
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="w-full bg-primary-container/10 border border-primary-fixed-dim text-primary-fixed-dim hover:bg-primary-container/20 transition-all duration-300 py-2 rounded font-label-caps text-label-caps flex items-center justify-center gap-2"
+            >
+              <span className="material-symbols-outlined !text-[16px]">add</span> New Uplink
+            </button>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
+            {rooms.length === 0 ? (
+              <p className="px-6 py-4 text-on-surface-variant/40 font-code-md text-code-md text-xs">
+                No channels available.
+              </p>
+            ) : (
+              rooms.map(room => {
+                const unreadCount = unreadCounts[room.id] || 0;
+                const isActive = activeRoom?.id === room.id;
+
                 return (
-                  <div key={index} style={{ display: 'flex', gap: '0.5rem', alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
-                    {!isMe && (
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#999', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#fff', flexShrink: 0, marginTop: '4px' }}>
+                  <button
+                    key={room.id}
+                    onClick={() => joinRoom(room)}
+                    className={`w-full flex items-center justify-between gap-3 px-6 py-3 text-left transition-all duration-200
+                      ${isActive
+                        ? 'bg-primary-container/10 text-primary-fixed-dim border-l-4 border-l-primary-fixed-dim'
+                        : 'text-on-surface-variant/60 border-l-4 border-l-transparent hover:bg-white/5 hover:text-primary-fixed'}`}
+                  >
+                    <span className="flex items-center gap-3 min-w-0">
+                      <span className="material-symbols-outlined !text-[20px] shrink-0">
+                        {room.type === 'GROUP' ? 'tag' : 'person'}
+                      </span>
+                      <span className="font-body-sm text-body-sm truncate">{room.name}</span>
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className="shrink-0 bg-primary-fixed-dim text-on-primary-fixed rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center text-[10px] font-code-md font-bold">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </nav>
+
+          <div className="mt-auto border-t border-outline-variant/10 p-4">
+            <button
+              onClick={signOut}
+              className="w-full font-body-sm text-body-sm text-on-surface-variant/50 flex items-center gap-3 px-2 py-2 hover:bg-white/5 hover:text-error rounded transition-colors duration-200"
+            >
+              <span className="material-symbols-outlined !text-[20px]">logout</span> Disconnect
+            </button>
+          </div>
+        </aside>
+
+        {/* MAIN CHAT AREA */}
+        <main className="flex-1 flex flex-col relative min-w-0">
+          {!activeRoom ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center opacity-40 px-6">
+                <div className="w-24 h-24 border border-outline-variant/40 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <span className="material-symbols-outlined !text-[36px] text-on-surface-variant">forum</span>
+                </div>
+                <h2 className="font-headline-lg-mobile text-headline-lg-mobile uppercase tracking-widest text-on-surface-variant mb-2">
+                  Aetheric Uplink
+                </h2>
+                <p className="font-code-md text-code-md text-on-surface-variant/60">
+                  Awaiting channel selection...
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Room Header */}
+              <header className="h-16 border-b border-outline-variant/10 glass-panel flex items-center px-6 justify-between shrink-0 z-10">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className="material-symbols-outlined text-primary-fixed-dim shrink-0"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    {activeRoom.type === 'GROUP' ? 'tag' : 'person'}
+                  </span>
+                  <h1 className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface tracking-tight truncate">
+                    {activeRoom.name}
+                  </h1>
+                  <span className="font-label-caps text-label-caps bg-surface-variant text-on-surface-variant px-2 py-1 rounded ml-2 shrink-0">
+                    {activeRoom.type}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-on-surface-variant/60 shrink-0">
+                  <button className="hover:text-primary-fixed-dim transition-colors">
+                    <span className="material-symbols-outlined !text-[20px]">search</span>
+                  </button>
+                </div>
+              </header>
+
+              {/* Messages Area */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-2 relative z-0 scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
+                {messages.map((msg, index) => {
+                  const isMe = msg.senderUsername === user?.email?.split('@')[0];
+                  return (
+                    <div
+                      key={msg.id ?? index}
+                      className="group flex gap-4 w-full max-w-3xl hover:bg-white/[0.02] p-2 -ml-2 rounded transition-colors"
+                    >
+                      <div
+                        className={`w-10 h-10 rounded flex items-center justify-center font-code-md text-code-md shrink-0 border
+                          ${isMe
+                            ? 'border-primary-fixed-dim/40 text-primary-fixed-dim bg-primary-container/5'
+                            : 'border-outline-variant/30 text-on-surface-variant bg-surface-container-high'}`}
+                      >
                         {getInitials(msg.senderUsername)}
                       </div>
-                    )}
-                    <div style={{ background: isMe ? '#dcf8c6' : '#fff', padding: '0.5rem 0.5rem 0.5rem 1rem', borderRadius: '8px', boxShadow: '0 1px 1px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
-                      {!isMe && (
-                        <span style={{ fontSize: '0.75rem', color: '#00a884', fontWeight: 'bold', marginBottom: '2px' }}>
-                          {msg.senderUsername}
-                        </span>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '1rem' }}>
-                        <span style={{ fontSize: '0.95rem', lineHeight: '1.4', color: '#303030' }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span
+                            className={`font-body-md text-body-md font-bold ${isMe ? 'text-primary-fixed-dim' : 'text-on-surface'}`}
+                          >
+                            {isMe ? 'You' : msg.senderUsername}
+                          </span>
+                          <span className="font-code-md text-code-md text-on-surface-variant/40 text-xs">
+                            {formatTime(msg.timestamp)}
+                          </span>
+                        </div>
+                        <p className="font-body-md text-body-md text-on-surface-variant break-words">
                           {msg.content}
-                        </span>
-                        <span style={{ fontSize: '0.65rem', color: '#888', whiteSpace: 'nowrap', marginBottom: '-2px' }}>
-                          {formatTime(msg.timestamp)}
-                        </span>
+                        </p>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* INDICADOR DE DIGITAÇÃO NA TELA */}
-            {currentlyTyping.length > 0 && (
-              <div style={{ padding: '0 2rem 0.5rem 2rem', fontSize: '0.8rem', color: '#666', fontStyle: 'italic', background: '#f0f2f5' }}>
-                {currentlyTyping.join(', ')} {currentlyTyping.length > 1 ? 'estão digitando...' : 'está digitando...'}
+                  );
+                })}
+                <div ref={messagesEndRef} />
               </div>
-            )}
 
-            <div style={{ padding: '1rem 2rem', background: '#f0f2f5', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <input 
-                type="text" 
-                value={newMessage} 
-                onChange={handleInputChange} // Usando a nova função com controle de digitação
-                onKeyDown={e => e.key === 'Enter' && sendMessage()}
-                placeholder="Digite uma mensagem" 
-                style={{ flex: 1, padding: '1rem 1.5rem', borderRadius: '24px', border: '1px solid #ddd', outline: 'none', fontSize: '1rem' }}
-              />
-              <button 
-                onClick={sendMessage}
-                style={{ padding: '0 2rem', height: '50px', background: '#00a884', color: 'white', border: 'none', borderRadius: '24px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}
-              >
-                Enviar
-              </button>
+              {/* Footer / Input */}
+              <div className="p-4 bg-surface-container-lowest/80 backdrop-blur-xl border-t border-outline-variant/10 z-10 shrink-0 relative">
+                {currentlyTyping.length > 0 && (
+                  <div className="max-w-3xl mx-auto mb-2 text-[10px] text-primary-fixed-dim font-code-md flex items-center gap-2">
+                    <span className="w-1 h-1 bg-primary-fixed-dim animate-ping rounded-full" />
+                    {currentlyTyping.join(', ')}{' '}
+                    {currentlyTyping.length > 1 ? 'are transmitting data...' : 'is transmitting data...'}
+                  </div>
+                )}
+
+                <div className="max-w-3xl mx-auto relative flex items-end gap-2 bg-surface-container-low border border-outline-variant/30 rounded-xl p-2 focus-within:border-primary-fixed-dim/50 focus-within:ring-1 focus-within:ring-primary-fixed-dim/20 transition-all duration-300">
+                  <button className="p-2 text-on-surface-variant/50 hover:text-primary-fixed-dim transition-colors rounded-lg hover:bg-white/5 shrink-0">
+                    <span className="material-symbols-outlined">add_circle</span>
+                  </button>
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={handleInputChange}
+                    onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                    placeholder="Transmit message to The Nexus..."
+                    className="w-full bg-transparent border-none focus:ring-0 text-body-md text-on-surface placeholder:text-on-surface-variant/40 py-2 font-body-md"
+                  />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button className="p-2 text-on-surface-variant/50 hover:text-primary-fixed-dim transition-colors rounded-lg hover:bg-white/5 hidden sm:block">
+                      <span className="material-symbols-outlined">sentiment_satisfied</span>
+                    </button>
+                    <button
+                      onClick={sendMessage}
+                      className="p-2 bg-primary-fixed-dim/10 text-primary-fixed-dim hover:bg-primary-fixed-dim hover:text-on-primary-fixed border border-primary-fixed-dim/30 transition-all duration-300 rounded-lg neon-glow ml-1"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        send
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <div className="max-w-3xl mx-auto mt-2 flex justify-between items-center px-2">
+                  <span className="font-code-md text-code-md text-on-surface-variant/40 text-[10px]">
+                    <strong>Enter</strong> to send
+                  </span>
+                  <span className="font-code-md text-code-md text-primary-fixed-dim/60 text-[10px] flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-primary-fixed-dim rounded-full animate-pulse" /> Uplink Secure
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
+        {/* RIGHT SIDEBAR (Node Details) */}
+        {activeRoom && (
+          <aside className="w-72 shrink-0 border-l border-outline-variant/10 bg-surface-container-lowest/30 hidden lg:flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-surface-variant scrollbar-track-transparent">
+            <div className="p-6 border-b border-outline-variant/10">
+              <h3 className="font-label-caps text-label-caps text-on-surface-variant tracking-widest mb-4">
+                NODE DETAILS
+              </h3>
+              <div className="glass-panel p-4 rounded-lg flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-primary-container/10 border-2 border-primary-fixed-dim/30 flex items-center justify-center mb-3">
+                  <span className="material-symbols-outlined text-primary-fixed-dim !text-3xl">
+                    {activeRoom.type === 'GROUP' ? 'hub' : 'person'}
+                  </span>
+                </div>
+                <h4 className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">
+                  {activeRoom.name}
+                </h4>
+                <p className="font-body-sm text-body-sm text-on-surface-variant/60 mt-1">
+                  {activeRoom.type === 'GROUP' ? 'Group Channel' : 'Direct Connection'}
+                </p>
+              </div>
             </div>
-          </>
+
+            <div className="p-6">
+              <h3 className="font-label-caps text-label-caps text-on-surface-variant tracking-widest mb-4 flex justify-between items-center">
+                PARTICIPANTS
+                <span className="text-primary-fixed-dim bg-primary-fixed-dim/10 px-2 py-0.5 rounded">
+                  {allUsers.length}
+                </span>
+              </h3>
+              <div className="space-y-4">
+                {allUsers.map(u => {
+                  const isSelf = u.id === myUserId;
+                  return (
+                    <div key={u.id} className="flex items-center gap-3 group">
+                      <div className="relative">
+                        <div
+                          className={`w-8 h-8 rounded flex items-center justify-center font-code-md text-code-md text-xs border
+                            ${isSelf ? 'border-primary-fixed-dim/50 text-primary-fixed-dim' : 'border-outline-variant/30 text-on-surface-variant'}`}
+                        >
+                          {getInitials(u.email)}
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-primary-fixed-dim rounded-full border-2 border-surface-container-lowest" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-body-sm text-body-sm text-on-surface truncate">
+                          {u.email}
+                          {isSelf ? ' (you)' : ''}
+                        </p>
+                        <p className="font-code-md text-code-md text-on-surface-variant/50 text-[10px] truncate">
+                          Node
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
         )}
       </div>
     </div>
