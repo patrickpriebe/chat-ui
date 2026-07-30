@@ -9,9 +9,9 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { useAuth } from '../contexts/AuthContext';
-import { TOKEN_KEY } from '../auth/session';
 import { api, WS_URL } from '../services/api';
 import { NexoraLogo } from '../components/NexoraLogo';
+import { TOKEN_KEY } from '../auth/session';
 
 interface UserSummary {
   id: string;

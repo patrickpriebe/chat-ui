@@ -80,18 +80,24 @@ export function Login() {
       <div className="relative z-10 w-full max-w-md px-margin-mobile md:px-0">
         <div className="glass-panel rounded-xl p-8 shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
           <div className="text-center mb-8">
-            <div className="flex justify-center mb-5">
-              <NexoraLogo className="h-20 w-80 max-w-full" />
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex max-w-full rounded-2xl overflow-hidden border border-primary-fixed-dim/30 bg-[#050505] p-1.5 shadow-[0_0_30px_rgba(0,219,233,0.18)]">
+              <NexoraLogo className="h-20 w-80 max-w-full rounded-xl" />
             </div>
-            <h1 className="font-headline-lg text-headline-lg text-primary-fixed-dim tracking-tighter mb-2">
-              {mode === 'login' ? 'Acessar a NEXORA' : 'Criar conta'}
-            </h1>
-            <p className="font-body-sm text-body-sm text-on-surface-variant">
-              {mode === 'login'
-                ? 'Entre para continuar suas conversas.'
-                : 'Crie sua identidade na rede NEXORA.'}
-            </p>
           </div>
+
+          {mode === 'register' && (
+            <h1 className="font-headline-lg text-headline-lg text-primary-fixed-dim tracking-tighter mb-2">
+              Criar conta
+            </h1>
+          )}
+
+          <p className="font-body-sm text-body-sm text-on-surface-variant">
+            {mode === 'login'
+              ? 'Entre para continuar suas conversas.'
+              : 'Crie sua identidade na rede NEXORA.'}
+          </p>
+        </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {mode === 'register' && (
@@ -109,7 +115,7 @@ export function Login() {
                   <input
                     className="input-cyber w-full rounded pl-10 pr-4 py-3 text-on-surface font-code-md text-code-md placeholder:text-on-surface-variant/30 focus:ring-0"
                     id="username"
-                    placeholder="patrick"
+                    placeholder="Nome"
                     required
                     minLength={3}
                     maxLength={50}
