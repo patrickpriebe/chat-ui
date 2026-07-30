@@ -10,10 +10,15 @@ function PrivateRoute({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  const { signed } = useAuth();
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Login />} />
+        <Route
+          path="/"
+          element={signed ? <Navigate to="/chat" replace /> : <Login />}
+        />
         <Route 
           path="/chat" 
           element={
@@ -22,6 +27,7 @@ export default function App() {
             </PrivateRoute>
           } 
         />
+        <Route path="*" element={<Navigate to={signed ? '/chat' : '/'} replace />} />
       </Routes>
     </BrowserRouter>
   );
