@@ -10,9 +10,9 @@ O projeto garante alta manutenibilidade e baixo acoplamento ao separar páginas,
 
 |                     Login & Cadastro                      |                     Chat & Canais                     |
 |:---------------------------------------------------------:|:-----------------------------------------------------:|
-| ![Login e Cadastro](./docs/screenshots/nexora1.png)      | ![Chat e Canais](./docs/screenshots/nexora2.png)               |
+| ![Login e Cadastro](docs/screenshots/nexora1.png)      | ![Chat e Canais](docs/screenshots/nexora2.png)               |
 |                    **Criação de Canal**                   |                **Notificações e Tracking**            |
-| ![Criação de Canal](./docs/screenshots/nexora3.png)| ![Notificações e Tracking](./docs/screenshots/nexora4.png)     |
+| ![Criação de Canal](docs/screenshots/nexora3.png)| ![Notificações e Tracking](docs/screenshots/nexora4.png)     |
 
 ---
 
