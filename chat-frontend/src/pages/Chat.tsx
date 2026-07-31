@@ -1,11 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
+import type { AxiosError } from 'axios';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { useAuth } from '../contexts/AuthContext';
@@ -40,6 +35,16 @@ interface TypingEvent {
   roomId: string;
   username: string;
   isTyping: boolean;
+}
+
+interface ProblemDetail {
+  detail?: string;
+  title?: string;
+}
+
+interface Feedback {
+  type: 'error' | 'success';
+  message: string;
 }
 
 const EMOJIS = [
@@ -135,6 +140,9 @@ export function Chat() {
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [roomError, setRoomError] = useState('');
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isMessageSearchOpen, setIsMessageSearchOpen] = useState(false);
@@ -146,14 +154,32 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     activeRoomRef.current = activeRoom;
   }, [activeRoom]);
 
+  const showFeedback = useCallback(
+    (message: string, type: Feedback['type'] = 'error') => {
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
+      }
+
+      setFeedback({ message, type });
+      feedbackTimeoutRef.current = setTimeout(() => {
+        setFeedback(null);
+        feedbackTimeoutRef.current = null;
+      }, 5000);
+    },
+    [],
+  );
+
   const appendMessage = useCallback((receivedMessage: ChatMessage) => {
     setMessages((currentMessages) => {
-      if (currentMessages.some((message) => message.id === receivedMessage.id)) {
+      if (
+        currentMessages.some((message) => message.id === receivedMessage.id)
+      ) {
         return currentMessages;
       }
 
@@ -217,13 +243,16 @@ export function Chat() {
         },
         onStompError: (frame) => {
           console.error('Falha na conexão STOMP:', frame.headers.message);
+          showFeedback(
+            'A conexão em tempo real foi interrompida. Tentaremos reconectar.',
+          );
         },
       });
 
       client.activate();
       clientRef.current = client;
     },
-    [subscribeToRoom],
+    [showFeedback, subscribeToRoom],
   );
 
   useEffect(() => {
@@ -245,6 +274,9 @@ export function Chat() {
         connectWebSocket(roomsResponse.data);
       } catch (error) {
         console.error('Erro ao inicializar o chat:', error);
+        showFeedback(
+          'Não foi possível carregar os dados do chat. Atualize a página e tente novamente.',
+        );
       }
     }
 
@@ -257,10 +289,14 @@ export function Chat() {
         clearTimeout(typingTimeoutRef.current);
       }
 
+      if (feedbackTimeoutRef.current) {
+        clearTimeout(feedbackTimeoutRef.current);
+      }
+
       void clientRef.current?.deactivate();
       clientRef.current = null;
     };
-  }, [connectWebSocket, user]);
+  }, [connectWebSocket, showFeedback, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -298,11 +334,7 @@ export function Chat() {
   );
 
   function publishTyping(isTyping: boolean) {
-    if (
-      !activeRoom ||
-      !clientRef.current ||
-      !clientRef.current.connected
-    ) {
+    if (!activeRoom || !clientRef.current || !clientRef.current.connected) {
       return;
     }
 
@@ -341,13 +373,17 @@ export function Chat() {
     }));
 
     try {
-      const response = await api.get<ChatMessage[]>(`/messages/room/${room.id}`);
+      const response = await api.get<ChatMessage[]>(
+        `/messages/room/${room.id}`,
+      );
       setMessages((messagesReceivedWhileLoading) => {
         const messagesById = new Map<string, ChatMessage>();
 
-        [...response.data, ...messagesReceivedWhileLoading].forEach((message) => {
-          messagesById.set(message.id, message);
-        });
+        [...response.data, ...messagesReceivedWhileLoading].forEach(
+          (message) => {
+            messagesById.set(message.id, message);
+          },
+        );
 
         return Array.from(messagesById.values()).sort(
           (firstMessage, secondMessage) =>
@@ -357,6 +393,7 @@ export function Chat() {
       });
     } catch (error) {
       console.error('Erro ao buscar o histórico da sala:', error);
+      showFeedback('Não foi possível carregar o histórico deste canal.');
     }
   }
 
@@ -385,6 +422,7 @@ export function Chat() {
     } catch (error) {
       setNewMessage(content);
       console.error('Erro ao enviar a mensagem:', error);
+      showFeedback('Não foi possível enviar a mensagem. Tente novamente.');
     }
   }
 
@@ -415,14 +453,31 @@ export function Chat() {
   }
 
   async function handleCreateRoom() {
-    if (!newRoomName.trim() || selectedUserIds.length === 0) {
-      window.alert('Informe o nome do canal e selecione pelo menos um usuário.');
+    const roomName = newRoomName.trim();
+
+    if (!roomName && selectedUserIds.length === 0) {
+      setRoomError(
+        'Informe o nome do canal e selecione pelo menos um usuário.',
+      );
       return;
     }
 
+    if (!roomName) {
+      setRoomError('Informe o nome do canal.');
+      return;
+    }
+
+    if (selectedUserIds.length === 0) {
+      setRoomError('Selecione pelo menos um usuário para participar do canal.');
+      return;
+    }
+
+    setRoomError('');
+    setIsCreatingRoom(true);
+
     try {
       const response = await api.post<Room>('/rooms', {
-        name: newRoomName.trim(),
+        name: roomName,
         type: 'GROUP',
         memberIds: selectedUserIds,
       });
@@ -437,14 +492,22 @@ export function Chat() {
       setNewRoomName('');
       setSelectedUserIds([]);
       setIsRoomModalOpen(false);
+      showFeedback('Canal criado com sucesso.', 'success');
       await joinRoom(newRoom);
     } catch (error) {
       console.error('Erro ao criar o canal:', error);
-      window.alert('Não foi possível criar o canal.');
+      const axiosError = error as AxiosError<ProblemDetail>;
+      setRoomError(
+        axiosError.response?.data?.detail ??
+          'Não foi possível criar o canal. Tente novamente.',
+      );
+    } finally {
+      setIsCreatingRoom(false);
     }
   }
 
   function toggleUserSelection(userId: string) {
+    setRoomError('');
     setSelectedUserIds((currentIds) =>
       currentIds.includes(userId)
         ? currentIds.filter((id) => id !== userId)
@@ -455,6 +518,40 @@ export function Chat() {
   return (
     <div className="flex flex-col h-screen bg-background font-body-md text-on-background overflow-hidden relative">
       <div className="absolute inset-0 bg-grid opacity-40 pointer-events-none z-0" />
+
+      {feedback && (
+        <div
+          role={feedback.type === 'error' ? 'alert' : 'status'}
+          className={`fixed top-5 right-5 z-[70] w-[calc(100%-2.5rem)] max-w-sm glass-panel rounded-xl border p-4 shadow-[0_12px_40px_rgba(0,0,0,0.55)] flex items-start gap-3 ${
+            feedback.type === 'error'
+              ? 'border-error/40'
+              : 'border-primary-fixed-dim/40'
+          }`}
+        >
+          <span
+            className={`material-symbols-outlined !text-[22px] shrink-0 ${
+              feedback.type === 'error'
+                ? 'text-error'
+                : 'text-primary-fixed-dim'
+            }`}
+          >
+            {feedback.type === 'error' ? 'error' : 'check_circle'}
+          </span>
+          <p className="flex-1 font-body-sm text-body-sm text-on-surface leading-relaxed">
+            {feedback.message}
+          </p>
+          <button
+            type="button"
+            aria-label="Fechar mensagem"
+            onClick={() => setFeedback(null)}
+            className="text-on-surface-variant/60 hover:text-on-surface transition-colors"
+          >
+            <span className="material-symbols-outlined !text-[18px]">
+              close
+            </span>
+          </button>
+        </div>
+      )}
 
       {isRoomModalOpen && (
         <div className="absolute inset-0 bg-background/90 backdrop-blur-sm flex items-center justify-center z-50 px-4">
@@ -469,8 +566,14 @@ export function Chat() {
               type="text"
               placeholder="Nome do canal"
               value={newRoomName}
-              onChange={(event) => setNewRoomName(event.target.value)}
-              className="input-cyber w-full rounded px-3 py-3 mb-6 font-code-md text-code-md text-on-surface placeholder:text-on-surface-variant/30 focus:ring-0"
+              onChange={(event) => {
+                setNewRoomName(event.target.value);
+                setRoomError('');
+              }}
+              aria-invalid={Boolean(roomError)}
+              className={`input-cyber w-full rounded px-3 py-3 mb-6 font-code-md text-code-md text-on-surface placeholder:text-on-surface-variant/30 focus:ring-0 ${
+                roomError ? '!border-error/60' : ''
+              }`}
               maxLength={100}
             />
 
@@ -494,9 +597,7 @@ export function Chat() {
                       <input
                         type="checkbox"
                         checked={selectedUserIds.includes(availableUser.id)}
-                        onChange={() =>
-                          toggleUserSelection(availableUser.id)
-                        }
+                        onChange={() => toggleUserSelection(availableUser.id)}
                         className="mr-3 accent-primary-fixed-dim"
                       />
                       <span className="font-code-md text-code-md text-on-surface-variant text-xs min-w-0">
@@ -512,20 +613,39 @@ export function Chat() {
               )}
             </div>
 
+            {roomError && (
+              <div
+                role="alert"
+                className="mb-6 rounded-lg border border-error/35 bg-error-container/10 px-4 py-3 flex items-start gap-3"
+              >
+                <span className="material-symbols-outlined !text-[20px] text-error shrink-0">
+                  error
+                </span>
+                <p className="font-body-sm text-body-sm text-error leading-relaxed">
+                  {roomError}
+                </p>
+              </div>
+            )}
+
             <div className="flex gap-4 justify-end">
               <button
                 type="button"
-                onClick={() => setIsRoomModalOpen(false)}
-                className="px-6 py-2 font-label-caps text-label-caps uppercase text-on-surface-variant hover:text-on-surface transition-colors"
+                onClick={() => {
+                  setRoomError('');
+                  setIsRoomModalOpen(false);
+                }}
+                disabled={isCreatingRoom}
+                className="px-6 py-2 font-label-caps text-label-caps uppercase text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={() => void handleCreateRoom()}
-                className="btn-primary-cyber px-6 py-2 rounded font-label-caps text-label-caps font-bold uppercase"
+                disabled={isCreatingRoom}
+                className="btn-primary-cyber px-6 py-2 rounded font-label-caps text-label-caps font-bold uppercase disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Criar
+                {isCreatingRoom ? 'Criando...' : 'Criar'}
               </button>
             </div>
           </div>
@@ -615,7 +735,8 @@ export function Chat() {
                             {room.name}
                           </strong>
                           <span className="block text-xs text-on-surface-variant/60">
-                            {count} {count === 1 ? 'mensagem nova' : 'mensagens novas'}
+                            {count}{' '}
+                            {count === 1 ? 'mensagem nova' : 'mensagens novas'}
                           </span>
                         </span>
                       </button>
@@ -648,10 +769,15 @@ export function Chat() {
             </div>
             <button
               type="button"
-              onClick={() => setIsRoomModalOpen(true)}
+              onClick={() => {
+                setRoomError('');
+                setIsRoomModalOpen(true);
+              }}
               className="w-full bg-primary-container/10 border border-primary-fixed-dim text-primary-fixed-dim hover:bg-primary-container/20 transition-all duration-300 py-2 rounded font-label-caps text-label-caps flex items-center justify-center gap-2"
             >
-              <span className="material-symbols-outlined !text-[16px]">add</span>
+              <span className="material-symbols-outlined !text-[16px]">
+                add
+              </span>
               Novo canal
             </button>
           </div>
@@ -751,7 +877,9 @@ export function Chat() {
                         aria-label="Buscar nas mensagens"
                         placeholder="Buscar neste canal..."
                         value={messageSearch}
-                        onChange={(event) => setMessageSearch(event.target.value)}
+                        onChange={(event) =>
+                          setMessageSearch(event.target.value)
+                        }
                         onKeyDown={(event) => {
                           if (event.key === 'Escape') {
                             setMessageSearch('');
