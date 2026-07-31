@@ -1,6 +1,6 @@
 # 💬 NEXORA - Interface Web (Front-end)
 
-> **Esta é a Interface (UI) que alimenta o sistema. [Acesse o repositório da API (Back-end) aqui]([SEU_LINK_AQUI])**
+> **Esta é a Interface (UI) que alimenta o sistema. [Acesse o repositório da API (Back-end) aqui](https://github.com/patrickpriebe/chat-api)**
 
 O NEXORA é um sistema de chat futurista full-stack baseado em canais e comunicação em tempo real. Este repositório contém o Front-end, desenvolvido com React, TypeScript e Vite, com foco rigoroso em componentização, responsividade e experiência do usuário (UX). A aplicação destaca-se pela sua identidade visual única: uma interface cyberpunk com glassmorphism, fundo escuro e detalhes em ciano neon.
 
