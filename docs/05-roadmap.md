@@ -99,16 +99,18 @@ Not planned, so their absence is not a to-do:
 
 ---
 
-## Cleanup already identified
+## Cleanup
 
-Small, mechanical, and worth doing before anything above:
+**`Chat.tsx` is over 1100 lines.** The channel sidebar, the message list, the composer, the
+modal and the notifications dropdown are five components sharing one file. Splitting them
+is safe and would make the STOMP logic — the part actually worth reading — visible. This is
+the one item left.
 
-- **`src/App.css` is dead.** No module imports it; it is Vite scaffold CSS.
-- **`src/assets/hero.png`, `react.svg` and `vite.svg` are unused.** Only `nexora-logo.png`
-  is imported.
-- **`chat-frontend/.env` is committed** even though `.gitignore` lists `.env`. It holds
-  only localhost defaults, so nothing leaked — but it should be removed from tracking now
-  that `.env.example` exists, before someone puts a real value in it.
-- **`Chat.tsx` is over 1100 lines.** The channel sidebar, the message list, the composer,
-  the modal and the notifications dropdown are five components sharing one file. Splitting
-  them is safe and would make the STOMP logic — the part actually worth reading — visible.
+Already done:
+
+- The Vite scaffold leftovers are gone — `src/App.css`, `src/assets/hero.png`, `react.svg`
+  and `vite.svg` were imported by nothing.
+- `chat-frontend/.env` is no longer tracked. It held only localhost defaults, so nothing
+  leaked, but `.gitignore` already listed it and `.env.example` now documents both
+  variables. Anyone cloning copies the example; the file on an existing checkout is
+  untouched.

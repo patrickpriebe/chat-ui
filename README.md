@@ -412,8 +412,6 @@ Recorded so they do not look like oversights.
   conversation will show it. Pagination belongs at the API first.
 - **Interface copy is Portuguese.** Documentation and identifiers are English; the strings
   the user reads are not, and there is no i18n layer to make that a choice.
-- **`src/App.css` and the Vite starter assets are dead weight** left from the scaffold — no
-  module imports them.
 
 ---
 
