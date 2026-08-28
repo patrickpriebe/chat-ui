@@ -119,14 +119,22 @@ lands in the chat without a second screen.
 
 The token is passed to `signIn`, which stores it and derives the session from its claims.
 
-### `GET /users` — everyone
+### `GET /users` — contacts
 
-`200 OK` with `UserSummary[]`. Used to populate the member picker; the current user is
-filtered out client-side.
+`200 OK` with `UserSummary[]`. Used to populate the member picker.
 
-> The endpoint returns every registered user. That is a product decision on the API's side
-> (a small demo instance with no directory model), and the client does not paginate or
-> search it.
+| Parameter | Default | Meaning |
+|---|---|---|
+| `search` | *empty* | Substring of the username or the e-mail, case-insensitive |
+| `limit` | `50` | Clamped to `200` by the API |
+
+The API excludes the authenticated caller from the result through the query itself. The
+client still filters by id before rendering, which is now redundant and harmless — and is
+what kept the picker correct while the API returned everyone.
+
+> The client sends neither parameter yet: it fetches the default page once, on load. A
+> search box wired to `search` is the natural next step, and it is what makes the picker
+> work on an instance with more than fifty accounts.
 
 ### `GET /rooms/me` — my channels
 
@@ -149,6 +157,19 @@ The new room is appended to the list, subscribed on the live STOMP client, and o
 
 `200 OK` with `ChatMessage[]`, ordered by timestamp ascending. The API re-checks that the
 caller is a member of the room and answers with a business-rule error otherwise.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `before` | *none* | ISO-8601 local date-time; returns only messages older than it |
+| `limit` | `50` | Clamped to `200` by the API |
+
+The response is the **newest** `limit` messages, returned oldest-first — which is what the
+conversation renders directly. Paging backwards means sending the timestamp of the oldest
+message already held as `before`; the API pages by key rather than by offset, so a message
+arriving mid-scroll does not shift the window.
+
+The client sends neither parameter today, so it always receives the newest page and cannot
+reach anything older. That gap is recorded in the roadmap.
 
 The client re-sorts anyway, because it merges the response with messages that arrived over
 the socket while the request was in flight.
@@ -190,7 +211,7 @@ destinations yet.
 
 ## Errors
 
-The API answers failures with RFC 7807 `ProblemDetail`. The client reads one field:
+The API answers failures with RFC 9457 `ProblemDetail`. The client reads one field:
 
 ```ts
 axiosError.response?.data?.detail ?? 'a written fallback'

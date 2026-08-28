@@ -47,7 +47,7 @@ badge.
 | Sign in / register | One screen, two modes; the API's `detail` field is what the error says |
 | Channels | Every room the user belongs to, with unread counts and the open one highlighted |
 | New channel | Name plus explicit member selection — a channel is never created by accident |
-| Conversation | Full history from the API, then live messages over STOMP, ordered by timestamp |
+| Conversation | The newest page of history from the API, then live messages over STOMP, ordered by timestamp |
 | Typing | An indicator that appears while the other side writes and clears after 2s of silence |
 | Notifications | A dropdown listing only rooms with unread messages, each one a jump to that room |
 | Search | Filters the open conversation and highlights every match inside the bubble |
@@ -216,11 +216,11 @@ Base URL from `VITE_API_URL` (default `http://localhost:8080/api`).
 | Method | Path | Used for |
 |---|---|---|
 | `POST` | `/users` | Registration |
-| `GET` | `/users` | Member picker when creating a channel |
+| `GET` | `/users` | Member picker; accepts `search` and `limit`, and excludes the caller |
 | `POST` | `/auth/login` | Returns `{ token }` |
 | `GET` | `/rooms/me` | Channels the signed-in user belongs to |
 | `POST` | `/rooms` | `{ name, type: "GROUP", memberIds }` |
-| `GET` | `/messages/room/{roomId}` | Full history, ascending |
+| `GET` | `/messages/room/{roomId}` | The newest page of history, ascending; `before` and `limit` page backwards |
 | `POST` | `/messages` | `{ content, roomId }` |
 
 | STOMP | Destination | Direction |
@@ -229,8 +229,10 @@ Base URL from `VITE_API_URL` (default `http://localhost:8080/api`).
 | `SUBSCRIBE` | `/topic/rooms/{roomId}/typing` | in |
 | `SEND` | `/app/typing` | out |
 
-Errors are read from RFC 7807 `ProblemDetail` bodies: the API's `detail` is shown when
-present, and a written fallback when it is not — never a raw status code.
+Errors are read from RFC 9457 `ProblemDetail` bodies: the API's `detail` is shown when
+present, and a written fallback when it is not — never a raw status code. Sign-in and
+registration are rate limited on the API and answer `429` in the same shape, so the toast
+already says something useful without a change here.
 
 Full payload shapes: [docs/04-api-contract.md](docs/04-api-contract.md).
 
@@ -408,8 +410,12 @@ Recorded so they do not look like oversights.
   rendered with its own icon, but no screen creates one.
 - **The presence dot is decorative.** Every member in the channel details panel carries a
   lit indicator; there is no presence channel behind it, so it says "member", not "online".
-- **Nothing is virtualised.** A room's entire history is fetched and rendered; a very long
-  conversation will show it. Pagination belongs at the API first.
+- **Only the newest page of a conversation is reachable.** The API now paginates the
+  history and returns the most recent 50 messages by default; the client sends no `before`
+  cursor and has no "load older" affordance, so anything past that page cannot be reached
+  from the interface. The API side of this is done — the reverse-infinite scrolling and
+  the scroll anchoring are not, and that is the harder half.
+- **Nothing is virtualised.** Whatever page is loaded is rendered in full.
 - **Interface copy is Portuguese.** Documentation and identifiers are English; the strings
   the user reads are not, and there is no i18n layer to make that a choice.
 

@@ -33,13 +33,19 @@ available before the cookie work below. It is a Vercel header configuration, not
 focus nowhere. `Escape` to close, focus moved to the first field on open and restored to
 the trigger on close, and a focus trap while it is open.
 
+**Loading older messages.** The API now paginates `GET /messages/room/{roomId}` and returns
+the newest fifty by default, so a conversation longer than that has a tail the interface
+cannot reach. What is missing is the front-end half: sending the oldest held timestamp as
+`before` when the scroll container hits the top, prepending the result, and anchoring the
+scroll position so the view does not jump. This moved up from *after that* the moment the
+API side landed — the gap is now visible to a user, not just theoretical.
+
+A search box on the member picker belongs in the same pass: `GET /users` accepts `search`
+and `limit`, and the client sends neither.
+
 ---
 
 ## After that
-
-**Message pagination.** A room's full history is fetched and rendered on every open. The
-API would need a cursor or page parameter; the client would need reverse-infinite scrolling
-and scroll anchoring, which is the harder half.
 
 **A `<textarea>` composer.** The handler already reserves `Shift+Enter`; the field is an
 `<input>`, so multi-line messages cannot be written. Auto-growing height with a cap is the
@@ -72,7 +78,7 @@ These are blocked, not deprioritised:
 | Direct messages | Nothing new, in fact — `DIRECT` is modelled end to end; only the screen to create one is missing |
 | Editing and deleting messages | Endpoints plus the events to fan the change out |
 | File and image attachments | Storage, upload endpoint, and a content type on the message |
-| Backfill after a reconnect | A "messages since" query; today a reconnect resubscribes but does not catch up |
+| Backfill after a reconnect | A "messages since" query. The history endpoint now pages *backwards* with `before`, which loads older messages but cannot catch up on newer ones; a reconnect resubscribes and does not catch up |
 
 The last one is worth stating plainly: **messages sent while the socket is down are not
 pushed when it returns.** They appear the next time the room is opened, because that is
