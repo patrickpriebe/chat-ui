@@ -70,6 +70,29 @@ const EMOJIS = [
   '💬',
 ];
 
+// The API pages the history and returns the newest messages first; this is the size the
+// client asks for and the number it uses to decide whether an older page exists.
+const HISTORY_PAGE_SIZE = 50;
+
+// One list, keyed by id and ordered by time. Used for both the initial page and the older
+// ones, because in both cases live messages may already be in state.
+function mergeMessages(
+  incoming: ChatMessage[],
+  existing: ChatMessage[],
+): ChatMessage[] {
+  const messagesById = new Map<string, ChatMessage>();
+
+  [...incoming, ...existing].forEach((message) => {
+    messagesById.set(message.id, message);
+  });
+
+  return Array.from(messagesById.values()).sort(
+    (firstMessage, secondMessage) =>
+      new Date(firstMessage.timestamp).getTime() -
+      new Date(secondMessage.timestamp).getTime(),
+  );
+}
+
 function getInitials(value?: string) {
   if (!value) return 'U';
 
@@ -149,12 +172,18 @@ export function Chat() {
   const [messageSearch, setMessageSearch] = useState('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+
   const clientRef = useRef<Client | null>(null);
   const activeRoomRef = useRef<Room | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Prepending older messages must not yank the view to the bottom.
+  const keepScrollPositionRef = useRef(false);
 
   useEffect(() => {
     activeRoomRef.current = activeRoom;
@@ -299,6 +328,11 @@ export function Chat() {
   }, [connectWebSocket, showFeedback, user]);
 
   useEffect(() => {
+    if (keepScrollPositionRef.current) {
+      keepScrollPositionRef.current = false;
+      return;
+    }
+
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -367,6 +401,8 @@ export function Chat() {
     setIsMessageSearchOpen(false);
     setIsEmojiPickerOpen(false);
     setIsNotificationsOpen(false);
+    setHasOlderMessages(false);
+    setIsLoadingOlder(false);
     setUnreadCounts((currentCounts) => ({
       ...currentCounts,
       [room.id]: 0,
@@ -375,25 +411,62 @@ export function Chat() {
     try {
       const response = await api.get<ChatMessage[]>(
         `/messages/room/${room.id}`,
+        { params: { limit: HISTORY_PAGE_SIZE } },
       );
-      setMessages((messagesReceivedWhileLoading) => {
-        const messagesById = new Map<string, ChatMessage>();
 
-        [...response.data, ...messagesReceivedWhileLoading].forEach(
-          (message) => {
-            messagesById.set(message.id, message);
-          },
-        );
+      // A full page means there is probably more behind it. A short one is the
+      // start of the conversation, and the API says so by having nothing else to give.
+      setHasOlderMessages(response.data.length === HISTORY_PAGE_SIZE);
 
-        return Array.from(messagesById.values()).sort(
-          (firstMessage, secondMessage) =>
-            new Date(firstMessage.timestamp).getTime() -
-            new Date(secondMessage.timestamp).getTime(),
-        );
-      });
+      setMessages((messagesReceivedWhileLoading) =>
+        mergeMessages(response.data, messagesReceivedWhileLoading),
+      );
     } catch (error) {
       console.error('Erro ao buscar o histórico da sala:', error);
       showFeedback('Não foi possível carregar o histórico deste canal.');
+    }
+  }
+
+  async function loadOlderMessages() {
+    const room = activeRoomRef.current;
+    const oldest = messages[0];
+    if (!room || !oldest || isLoadingOlder) return;
+
+    const container = messagesContainerRef.current;
+    const heightBefore = container?.scrollHeight ?? 0;
+    const offsetBefore = container?.scrollTop ?? 0;
+
+    setIsLoadingOlder(true);
+
+    try {
+      const response = await api.get<ChatMessage[]>(
+        `/messages/room/${room.id}`,
+        { params: { before: oldest.timestamp, limit: HISTORY_PAGE_SIZE } },
+      );
+
+      if (activeRoomRef.current?.id !== room.id) return;
+
+      setHasOlderMessages(response.data.length === HISTORY_PAGE_SIZE);
+
+      if (response.data.length === 0) return;
+
+      keepScrollPositionRef.current = true;
+      setMessages((currentMessages) =>
+        mergeMessages(response.data, currentMessages),
+      );
+
+      // Restore the reading position: the content above grew, so the same
+      // messages must stay under the same pixel.
+      requestAnimationFrame(() => {
+        const element = messagesContainerRef.current;
+        if (!element) return;
+        element.scrollTop = element.scrollHeight - heightBefore + offsetBefore;
+      });
+    } catch (error) {
+      console.error('Erro ao buscar mensagens anteriores:', error);
+      showFeedback('Não foi possível carregar as mensagens anteriores.');
+    } finally {
+      setIsLoadingOlder(false);
     }
   }
 
@@ -918,7 +991,24 @@ export function Chat() {
                 </div>
               </header>
 
-              <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative z-0">
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 relative z-0"
+              >
+                {hasOlderMessages && !messageSearch.trim() && (
+                  <div className="flex justify-center pb-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadOlderMessages()}
+                      disabled={isLoadingOlder}
+                      className="font-code-md text-[11px] uppercase tracking-widest text-on-surface-variant/70 hover:text-primary-fixed-dim border border-outline-variant/30 px-4 py-1.5 rounded transition-colors disabled:opacity-50 disabled:cursor-wait"
+                    >
+                      {isLoadingOlder
+                        ? 'Carregando…'
+                        : 'Carregar mensagens anteriores'}
+                    </button>
+                  </div>
+                )}
                 {visibleMessages.length === 0 && messageSearch.trim() ? (
                   <div className="h-full flex items-center justify-center text-on-surface-variant/50 font-code-md text-sm">
                     Nenhuma mensagem encontrada.

@@ -168,8 +168,10 @@ conversation renders directly. Paging backwards means sending the timestamp of t
 message already held as `before`; the API pages by key rather than by offset, so a message
 arriving mid-scroll does not shift the window.
 
-The client sends neither parameter today, so it always receives the newest page and cannot
-reach anything older. That gap is recorded in the roadmap.
+The client asks for `limit=50` when a room is opened, and sends the timestamp of its
+oldest held message as `before` when *Carregar mensagens anteriores* is pressed. A page
+that comes back short of the limit is how it knows the conversation has no more behind it,
+and the button disappears.
 
 The client re-sorts anyway, because it merges the response with messages that arrived over
 the socket while the request was in flight.

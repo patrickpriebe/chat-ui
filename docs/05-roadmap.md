@@ -33,15 +33,17 @@ available before the cookie work below. It is a Vercel header configuration, not
 focus nowhere. `Escape` to close, focus moved to the first field on open and restored to
 the trigger on close, and a focus trap while it is open.
 
-**Loading older messages.** The API now paginates `GET /messages/room/{roomId}` and returns
-the newest fifty by default, so a conversation longer than that has a tail the interface
-cannot reach. What is missing is the front-end half: sending the oldest held timestamp as
-`before` when the scroll container hits the top, prepending the result, and anchoring the
-scroll position so the view does not jump. This moved up from *after that* the moment the
-API side landed — the gap is now visible to a user, not just theoretical.
+**A search box on the member picker.** `GET /users` accepts `search` and `limit`; the
+client fetches the default page once and sends neither. On an instance with more than
+fifty accounts the picker silently stops showing people, which is the same shape of bug
+history pagination had before it was addressed.
 
-A search box on the member picker belongs in the same pass: `GET /users` accepts `search`
-and `limit`, and the client sends neither.
+**Reverse-infinite scrolling.** Older messages already load, on an explicit button.
+Turning that into a fetch triggered by reaching the top of the container is a real
+improvement and a real risk: the container's height changes underneath the scroll that
+triggered it, so it needs an intersection observer and a scroll anchor rather than an
+`onScroll` handler. The button exists because it is correct today; this is what makes it
+invisible.
 
 ---
 

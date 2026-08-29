@@ -47,7 +47,7 @@ badge.
 | Sign in / register | One screen, two modes; the API's `detail` field is what the error says |
 | Channels | Every room the user belongs to, with unread counts and the open one highlighted |
 | New channel | Name plus explicit member selection — a channel is never created by accident |
-| Conversation | The newest page of history from the API, then live messages over STOMP, ordered by timestamp |
+| Conversation | The newest 50 messages, then live ones over STOMP, ordered by timestamp; a button pages further back |
 | Typing | An indicator that appears while the other side writes and clears after 2s of silence |
 | Notifications | A dropdown listing only rooms with unread messages, each one a jump to that room |
 | Search | Filters the open conversation and highlights every match inside the bubble |
@@ -410,12 +410,16 @@ Recorded so they do not look like oversights.
   rendered with its own icon, but no screen creates one.
 - **The presence dot is decorative.** Every member in the channel details panel carries a
   lit indicator; there is no presence channel behind it, so it says "member", not "online".
-- **Only the newest page of a conversation is reachable.** The API now paginates the
-  history and returns the most recent 50 messages by default; the client sends no `before`
-  cursor and has no "load older" affordance, so anything past that page cannot be reached
-  from the interface. The API side of this is done — the reverse-infinite scrolling and
-  the scroll anchoring are not, and that is the harder half.
-- **Nothing is virtualised.** Whatever page is loaded is rendered in full.
+- **Older messages load on a button, not on scroll.** A conversation opens on its newest
+  50 messages and *Carregar mensagens anteriores* fetches the page before it. An explicit
+  control is deliberate — an automatic fetch at the top of a container whose height it is
+  about to change is where scroll-anchoring bugs live — but it is one tap per page rather
+  than a continuous scroll.
+- **Nothing is virtualised.** Every page loaded so far is rendered in full, so reading far
+  back keeps growing the DOM.
+- **The member picker does not search.** `GET /users` accepts `search` and `limit`; the
+  client fetches the default page once and filters nothing server-side, which stops being
+  enough past fifty accounts.
 - **Interface copy is Portuguese.** Documentation and identifiers are English; the strings
   the user reads are not, and there is no i18n layer to make that a choice.
 
